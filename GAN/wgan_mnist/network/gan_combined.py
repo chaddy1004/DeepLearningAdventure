@@ -31,3 +31,4 @@ class GanCombined(BaseModel):
             loss=wgan_loss)
 
         return combined, parallel_combined
+
