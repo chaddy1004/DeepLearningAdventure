@@ -1,0 +1,8 @@
+#images
+*.jpg 
+*.png
+#pycharm
+.idea/
+#stuff
+.DS_Store
+
