@@ -1,0 +1,37 @@
+{
+  "exp": {
+    "name": "WGAN-GP_mnist",
+    "experiment_dir": "/data/tcgan_font_experiments/"
+  },
+  "data": {
+    "img_size": 28,
+    "latent_dim": 100,
+    "img_channels": 1
+  },
+  "model": {
+    "generator": {
+      "lr": 0.0001,
+      "beta1": 0.5,
+      "beta2": 0.999,
+      "clipvalue": 0,
+      "clipnorm": 0,
+      "L1_weight": 0
+    },
+    "discriminator": {
+      "lr": 0.0001,
+      "beta1": 0,
+      "beta2": 0.9,
+      "clipvalue": 0,
+      "clipnorm": 0,
+      "gradient_penalty": 10
+    }
+  },
+  "trainer": {
+    "num_epochs": 10000,
+    "batch_size": 64,
+    "n_critic": 5,
+    "predict_all_freq": 50,
+    "n_gpus": 2,
+    "gpu_memory_fraction": 0.9
+  }
+}
