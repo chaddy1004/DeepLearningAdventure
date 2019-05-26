@@ -3,10 +3,10 @@ from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import numpy as np
+from keras.callbacks import TensorBoard
 from keras.datasets import mnist
 
 from base.base_trainer import BaseTrain
-from keras.callbacks import TensorBoard
 
 
 class CombinedTrainer(BaseTrain):
@@ -23,12 +23,30 @@ class CombinedTrainer(BaseTrain):
         self.log_dir = self.config.exp.log_dir
         self.sample_dir = self.config.exp.sample_dir
         self.info_dir = self.config.exp.info_dir
+        self.model_callbacks = defaultdict(list)
+        self.init_callbacks()
 
     def init_callbacks(self):
+        # we want tensorboard to draw the graph of combined model
         self.model_callbacks['combined'].append(
             TensorBoard(log_dir=self.log_dir, batch_size=self.config.trainer.batch_size, write_images=True)
         )
-
+        epochs = self.config.trainer.num_epochs
+        steps_per_epoch = self.config.trainer.n_train_data // self.config.trainer.batch_size
+        for model_name in self.model_callbacks:
+            model = eval(f"self.{model_name}")
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.set_model(model)
+                callback.set_params({
+                    'batch_size': self.config.trainer.batch_size,
+                    'epochs': epochs,
+                    'steps': steps_per_epoch,
+                    'samples': self.config.trainer.n_train_data,
+                    'verbose': True,
+                    'do_validation': False,
+                    'model_name': model_name
+                })
 
     @staticmethod
     def d_metric_names():
@@ -37,8 +55,6 @@ class CombinedTrainer(BaseTrain):
     @staticmethod
     def g_metric_names():
         return ['loss_G']
-
-
 
     def train(self):
         batch_size = self.config.trainer.batch_size
@@ -51,44 +67,78 @@ class CombinedTrainer(BaseTrain):
         start_time = datetime.datetime.now()
 
         (X_train, _), (_, _) = mnist.load_data()
-        X_train = X_train[0:30000,...]
+        X_train = X_train[0:self.config.trainer.n_train_data, ...]
         X_train = (X_train / 127.5) - 1
         X_train = np.expand_dims(X_train, axis=3)
         train_size = X_train.shape[0]
-        steps = train_size // batch_size
+        steps_per_epoch = train_size // batch_size
 
         d_metric_names = self.d_metric_names()
         g_metric_names = self.g_metric_names()
-
+        self.on_train_begin()
         for epoch in range(epochs_total):
+            self.on_epoch_begin(epoch=epoch, logs={})
             epoch_logs = defaultdict(float)
-            for step in range(steps):
-                metric_logs = {}
-                i = np.random.randint(0, X_train.shape[0], batch_size)
-                images_real = X_train[i]
-                latent_vector = np.random.normal(0, 1, (batch_size, latent_dim))
-                images_generated = self.generator.predict(latent_vector)
-
-                d_loss = self.discriminator.train_on_batch([images_generated, images_real], [fake, real, dummy])
-                assert (len(d_metric_names) == len(d_loss))
-                for metric_name, metric_value in zip(d_metric_names, d_loss):
-                    metric_logs[f'train/{metric_name}'] == metric_value
-
-                if step % n_critic == 0:
+            for step in range(steps_per_epoch):
+                batch_logs = {'batch': step, 'size': self.config.trainer.batch_size}
+                metric_logs = defaultdict(float)
+                d_metric_logs = defaultdict(float)
+                for _ in range(n_critic):
+                    i = np.random.randint(0, X_train.shape[0], batch_size)
+                    images_real = X_train[i]
                     latent_vector = np.random.normal(0, 1, (batch_size, latent_dim))
-                    g_loss = self.combined.train_on_batch(latent_vector, real)
-                    assert (len(g_metric_names) == len(g_loss))
+                    images_generated = self.generator.predict(latent_vector)
+
+                    d_loss = self.discriminator.train_on_batch([images_generated, images_real], [fake, real, dummy])
+                    d_loss = [d_loss] if type(d_loss) != list else d_loss  # In case model only outputs one loss
+                    assert (len(d_metric_names) == len(d_loss))  # if loss only has one output, it will not be a list
                     for metric_name, metric_value in zip(d_metric_names, d_loss):
-                        metric_logs[f'train/{metric_name}'] == metric_value
+                        d_metric_logs[f'train/{metric_name}'] += metric_value
+
+                for key in d_metric_logs:
+                    d_metric_logs[key] /= n_critic
+
+                # if step % n_critic == 0:
+                latent_vector = np.random.normal(0, 1, (batch_size, latent_dim))
+                g_loss = self.combined.train_on_batch(latent_vector, real)
+                g_loss = [g_loss] if type(g_loss) != list else g_loss  # In case model only outputs one loss
+                assert (len(g_metric_names) == len(g_loss))
+                for metric_name, metric_value in zip(g_metric_names, g_loss):
+                    metric_logs[f'train/{metric_name}'] += metric_value
+                metric_logs.update(d_metric_logs)
+                self.print_losses(metric_logs=metric_logs, epoch=epoch, epochs_total=epochs_total, step=step,
+                                  steps_per_epoch=steps_per_epoch, start_time=start_time)
+                batch_logs.update(metric_logs)
 
                 for metric_name in metric_logs.keys():
-                    if metric_name in epoch_logs:
-                        epoch_logs[metric_name] += metric_logs[metric_name]
-                    else:
-                        epoch_logs[metric_name] = metric_logs[metric_name]
-                print(f"d_loss_real: {d_loss[1]}, d_loss_fake: {d_loss[2]}, d_loss_GP: {d_loss[3]}, g_loss: {g_loss}")
-            self.save_sample(epoch, self.log_dir)
+                    epoch_logs[metric_name] += metric_logs[metric_name]
 
+                batch_logs = dict(batch_logs)
+                self.on_batch_end(batch=step, logs=batch_logs)
+
+            for key in epoch_logs:
+                epoch_logs[key] /= steps_per_epoch
+            epoch_logs = dict(epoch_logs)
+            self.on_epoch_end(epoch=epoch, logs=epoch_logs)
+            self.save_sample(epoch, self.sample_dir)
+
+        self.on_train_end()
+
+    def print_losses(self, metric_logs, epoch, epochs_total, step, steps_per_epoch, start_time):
+        print_str = f"[Epoch {epoch + 1}/{epochs_total}] [Batch {step}/{steps_per_epoch}]"
+        deliminator = ' '
+        for metric_name, metric_value in metric_logs.items():
+            if 'accuracy' in metric_name:
+                print_str += f"{deliminator}{metric_name}={metric_value:.1f}%"
+            elif 'loss' in metric_name:
+                print_str += f"{deliminator}{metric_name}={metric_value:.4f}"
+            else:
+                print_str += f"{deliminator}{metric_name}={metric_value}"
+            if deliminator == ' ':
+                deliminator = ',\t'
+
+        print_str += f", time: {datetime.datetime.now() - start_time}"
+        print(print_str, flush=True)
 
     def save_sample(self, epoch, path):
         row, col = 10, 10
@@ -96,7 +146,7 @@ class CombinedTrainer(BaseTrain):
         noise = np.random.normal(0, 1, (row * col, self.config.data.latent_dim))
         generated = self.generator.predict(noise)
         # rescale image
-        generated = (generated+1.) * 127.5
+        generated = (generated + 1.) * 127.5
 
         fig, axis = plt.subplots(row, col)
         count = 0
@@ -109,3 +159,43 @@ class CombinedTrainer(BaseTrain):
 
         fig.savefig(path + "/images%d.png" % epoch)
         plt.close()
+
+    def on_batch_begin(self, batch, logs=None):
+        for model_name in self.model_callbacks:
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.on_batch_begin(batch, logs)
+
+    def on_batch_end(self, batch, logs=None):
+        for model_name in self.model_callbacks:
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.on_batch_end(batch, logs)
+
+    def on_epoch_begin(self, epoch, logs):
+        logs = logs or {}
+        for model_name in self.model_callbacks:
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.on_epoch_begin(epoch, logs)
+
+    def on_epoch_end(self, epoch, logs):
+        logs = logs or {}
+        for model_name in self.model_callbacks:
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.on_epoch_end(epoch, logs)
+
+    def on_train_begin(self, logs=None):
+        for model_name in self.model_callbacks:
+            model = eval(f"self.{model_name}")
+            model.stop_training = False
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.on_train_begin(logs)
+
+    def on_train_end(self, logs=None):
+        for model_name in self.model_callbacks:
+            callbacks = self.model_callbacks[model_name]
+            for callback in callbacks:
+                callback.on_train_end(logs)

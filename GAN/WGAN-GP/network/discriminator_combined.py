@@ -11,6 +11,9 @@ from utils.losses import _gp_loss, wgan_loss
 
 
 class BlendRealandFake(_Merge):
+    def __init__(self, batch_size=64, **kwargs):
+        super(BlendRealandFake, self).__init__(**kwargs)
+        self.batch_size = batch_size
 
     def build(self, input_shape):
         return super().build(input_shape)
@@ -44,7 +47,7 @@ class DiscriminatorCombined(BaseModel):
         parallel_model = self.multi_gpu_model(model)
         input_fakes = model.inputs[0]
         input_reals = model.inputs[1]
-        input_blends = BlendRealandFake()([input_reals, input_fakes])
+        input_blends = BlendRealandFake(batch_size=self.config.trainer.batch_size)([input_reals, input_fakes])
         gp_loss = self.gp_loss(blended_sample=input_blends, blended_sample_pred=discriminator(input_blends))
 
         optim = Adam(
