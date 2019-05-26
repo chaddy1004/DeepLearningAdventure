@@ -1,10 +1,11 @@
 {
   "exp": {
-    "name": "WGAN-GP_mnist",
+    "name": "second_WGAN_GP_CHADDY_100_EPOCHS",
     "experiment_dir": "/data/tcgan_font_experiments/"
   },
   "data": {
     "img_size": 28,
+    "label_len": 10,
     "latent_dim": 100,
     "img_channels": 1
   },
@@ -15,7 +16,8 @@
       "beta2": 0.999,
       "clipvalue": 0,
       "clipnorm": 0,
-      "L1_weight": 0
+      "adv_weight": 1,
+      "aux_weight": 0.1
     },
     "discriminator": {
       "lr": 0.0001,
@@ -23,12 +25,15 @@
       "beta2": 0.9,
       "clipvalue": 0,
       "clipnorm": 0,
+      "adv_weight": 1,
+      "aux_weight": 1,
       "gradient_penalty": 10
     }
   },
   "trainer": {
-    "num_epochs": 10000,
+    "num_epochs": 100,
     "batch_size": 64,
+    "n_train_data": 60000,
     "n_critic": 5,
     "predict_all_freq": 50,
     "n_gpus": 2,

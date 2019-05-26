@@ -10,9 +10,10 @@ class GanCombined(BaseModel):
     def define_model(self, generator, discriminator, model_name):
         z = Input(shape=(self.config.data.latent_dim,))
         img_gen = generator(z)
-        val = discriminator(img_gen)
+        val = discriminator(img_gen)[0]
+        aux = discriminator(img_gen)[1]
 
-        return Model(inputs=z, outputs=val, name=model_name)
+        return Model(inputs=z, outputs=[val, aux], name=model_name)
 
     def build_model(self, generator, discriminator, model_name):
         discriminator.trainable = False
@@ -28,7 +29,8 @@ class GanCombined(BaseModel):
 
         parallel_combined.compile(
             optimizer=optimizer,
-            loss=wgan_loss)
+            loss=[wgan_loss, 'categorical_crossentropy'],
+            loss_weights=[self.config.model.generator.adv_weight, self.config.model.generator.aux_weight]
+        )
 
         return combined, parallel_combined
-

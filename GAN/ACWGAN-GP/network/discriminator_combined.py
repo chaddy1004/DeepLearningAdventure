@@ -4,7 +4,7 @@ from keras import backend as K
 from keras.layers import Input
 from keras.layers.merge import _Merge
 from keras.models import Model
-from keras.optimizers import SGD, Adam
+from keras.optimizers import Adam
 
 from base.base_model import BaseModel
 from utils.losses import _gp_loss, wgan_loss
@@ -28,11 +28,15 @@ class DiscriminatorCombined(BaseModel):
         input_fakes = Input(shape=self.config.data.img_shape)
         input_reals = Input(shape=self.config.data.img_shape)
 
-        fake_vals = discriminator(input_fakes)
-        real_vals = discriminator(input_reals)
+        fake_vals = discriminator(input_fakes)[0]
+        real_vals = discriminator(input_reals)[0]
+
+        fake_aux = discriminator(input_fakes)[1]
+        real_aux = discriminator(input_fakes)[1]
 
         dummy_vals = real_vals
-        return Model(inputs=[input_fakes, input_reals], outputs=[fake_vals, real_vals, dummy_vals], name=model_name)
+        return Model(inputs=[input_fakes, input_reals], outputs=[fake_vals, fake_aux, real_vals, real_aux, dummy_vals],
+                     name=model_name)
 
     def gp_loss(self, blended_sample=None, blended_sample_pred=None):
         gp_loss_func = partial(_gp_loss, blended_sample=blended_sample, blended_sample_pred=blended_sample_pred)
@@ -55,7 +59,11 @@ class DiscriminatorCombined(BaseModel):
             clipnorm=self.config.model.discriminator.clipnorm)
 
         parallel_model.compile(optimizer=optim,
-                      loss=[wgan_loss] * 2 + [gp_loss],
-                      loss_weights=[1, 1, self.config.model.discriminator.gradient_penalty])
-
+                               loss=[wgan_loss, wgan_loss, 'categorical_crossentropy', 'categorical_crossentropy',
+                                     gp_loss],
+                               loss_weights=[self.config.model.generator.adv_weight,
+                                             self.config.model.generator.adv_weight,
+                                             self.config.model.generator.aux_weight,
+                                             self.config.model.generator.aux_weight,
+                                             self.config.model.discriminator.gradient_penalty])
         return model, parallel_model
