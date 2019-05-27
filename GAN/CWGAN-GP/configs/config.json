@@ -1,0 +1,42 @@
+{
+  "exp": {
+    "name": "CWGAN_GP_CHADDY_100_EPOCHS",
+    "experiment_dir": "/data/tcgan_font_experiments/"
+  },
+  "data": {
+    "img_size": 28,
+    "label_len": 10,
+    "latent_dim": 90,
+    "img_channels": 1
+  },
+  "model": {
+    "generator": {
+      "lr": 0.0001,
+      "beta1": 0.5,
+      "beta2": 0.999,
+      "clipvalue": 0,
+      "clipnorm": 0,
+      "adv_weight": 1,
+      "aux_weight": 1
+    },
+    "discriminator": {
+      "lr": 0.0001,
+      "beta1": 0,
+      "beta2": 0.9,
+      "clipvalue": 0,
+      "clipnorm": 0,
+      "adv_weight": 1,
+      "aux_weight": 1,
+      "gradient_penalty": 10
+    }
+  },
+  "trainer": {
+    "num_epochs": 100,
+    "batch_size": 64,
+    "n_train_data": 20000,
+    "n_critic": 5,
+    "predict_all_freq": 50,
+    "n_gpus": 2,
+    "gpu_memory_fraction": 0.9
+  }
+}
