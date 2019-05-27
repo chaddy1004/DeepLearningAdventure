@@ -6,7 +6,7 @@ from base.base_model import BaseModel
 
 class Generator(BaseModel):
     def define_model(self, model_name):
-        z = Input(shape=(self.config.data.latent_dim,))
+        z = Input(shape=(self.config.data.latent_dim + self.config.data.label_len + 1,))
         x = Dense((7 * 7 * 128))(z)
         x = LeakyReLU(alpha=0.2)(x)
         x = BatchNormalization()(x)

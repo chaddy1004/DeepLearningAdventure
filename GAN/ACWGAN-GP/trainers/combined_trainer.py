@@ -9,12 +9,6 @@ from keras.datasets import mnist
 from base.base_trainer import BaseTrain
 
 
-def digit_to_onehot(digit):
-    one_hot = np.zeros((10,), dtype=np.int8)
-    one_hot[digit] = 1
-    return one_hot
-
-
 class CombinedTrainer(BaseTrain):
     def __init__(self, generator, discriminator, parallel_discriminator, combined,
                  parallel_combined, config):
@@ -32,9 +26,9 @@ class CombinedTrainer(BaseTrain):
         self.model_callbacks = defaultdict(list)
         self.init_callbacks()
 
-    def digit_to_onehot(self, digit):
-        one_hot = np.zeros((self.config.data.label_len+1,), dtype=np.int8)
-        one_hot[digit] = 1
+    def digit_to_onehot(self, digit_array, batch_size=64):
+        one_hot = np.zeros((batch_size, self.config.data.label_len + 1), dtype=np.int8)
+        one_hot[np.arange(0, batch_size), digit_array[np.arange(0, batch_size)]] = 1
         return one_hot
 
     def init_callbacks(self):
@@ -61,11 +55,11 @@ class CombinedTrainer(BaseTrain):
 
     @staticmethod
     def d_metric_names():
-        return ['loss_D', 'loss_D_fake_val', 'loss_D_real_val', 'loss_D_fake_aux', 'loss_D_real_aux', 'loss_D_GP']
+        return ['loss_D', 'loss_D_fake_val', 'loss_D_fake_aux', 'loss_D_real_val', 'loss_D_real_aux', 'loss_D_GP']
 
     @staticmethod
     def g_metric_names():
-        return ['loss_G']
+        return ['loss_G', 'loss_G_adv', 'loss_G_aux']
 
     def train(self):
         batch_size = self.config.trainer.batch_size
@@ -80,11 +74,11 @@ class CombinedTrainer(BaseTrain):
         (X_train, Y_train), (_, _) = mnist.load_data()
         X_train = X_train[0:self.config.trainer.n_train_data, ...]
         Y_train = Y_train[0:self.config.trainer.n_train_data, ...]
-        assert self.config.data.label_len == np.max(Y_train+1)
+        assert self.config.data.label_len == np.max(Y_train + 1)
         X_train = (X_train / 127.5) - 1
         X_train = np.expand_dims(X_train, axis=3)
-        fake_label = np.zeros((self.config.data.label_len+1,), dtype=np.int8)
-        fake_label[-1] = 1
+        labels_fake = np.zeros((self.config.trainer.batch_size, self.config.data.label_len + 1,), dtype=np.int8)
+        labels_fake[:, -1] = 1
 
         train_size = X_train.shape[0]
         steps_per_epoch = train_size // batch_size
@@ -103,11 +97,13 @@ class CombinedTrainer(BaseTrain):
                 for _ in range(n_critic):
                     i = np.random.randint(0, X_train.shape[0], batch_size)
                     images_real = X_train[i]
-                    real_label = self.digit_to_onehot(Y_train[i])
+                    labels_real = self.digit_to_onehot(Y_train[i], batch_size=batch_size)
                     latent_vector = np.random.normal(0, 1, (batch_size, latent_dim))
-                    images_generated = self.generator.predict(latent_vector)
+                    conditional_latent = np.concatenate((latent_vector, labels_real), axis=-1)
+                    images_generated = self.generator.predict(conditional_latent)
 
-                    d_loss = self.discriminator.train_on_batch([images_generated, images_real], [fake, fake_label, real, real_label, dummy])
+                    d_loss = self.discriminator.train_on_batch([images_generated, images_real],
+                                                               [fake, labels_fake, real, labels_real, dummy])
                     d_loss = [d_loss] if type(d_loss) != list else d_loss  # In case model only outputs one loss
                     assert (len(d_metric_names) == len(d_loss))  # if loss only has one output, it will not be a list
                     for metric_name, metric_value in zip(d_metric_names, d_loss):
@@ -116,9 +112,11 @@ class CombinedTrainer(BaseTrain):
                 for key in d_metric_logs:
                     d_metric_logs[key] /= n_critic
 
-                # if step % n_critic == 0:
                 latent_vector = np.random.normal(0, 1, (batch_size, latent_dim))
-                g_loss = self.combined.train_on_batch(latent_vector, real)
+                i = np.random.randint(0, self.config.data.label_len, batch_size)
+                labels_to_create = self.digit_to_onehot(i, batch_size=batch_size)
+                conditional_latent = np.concatenate((latent_vector, labels_to_create), axis=-1)
+                g_loss = self.combined.train_on_batch(conditional_latent, [real, labels_to_create])
                 g_loss = [g_loss] if type(g_loss) != list else g_loss  # In case model only outputs one loss
                 assert (len(g_metric_names) == len(g_loss))
                 for metric_name, metric_value in zip(g_metric_names, g_loss):
@@ -138,7 +136,7 @@ class CombinedTrainer(BaseTrain):
                 epoch_logs[key] /= steps_per_epoch
             epoch_logs = dict(epoch_logs)
             self.on_epoch_end(epoch=epoch, logs=epoch_logs)
-            self.save_sample(epoch, self.sample_dir)
+            self.conditional_save_sample(epoch, self.sample_dir)
 
         self.on_train_end()
 
@@ -158,23 +156,20 @@ class CombinedTrainer(BaseTrain):
         print_str += f", time: {datetime.datetime.now() - start_time}"
         print(print_str, flush=True)
 
-    def save_sample(self, epoch, path):
-        row, col = 10, 10
-
-        noise = np.random.normal(0, 1, (row * col, self.config.data.latent_dim))
-        generated = self.generator.predict(noise)
-        # rescale image
-        generated = (generated + 1.) * 127.5
-
+    def conditional_save_sample(self, epoch, path):
+        row, col = self.config.data.label_len, 10
         fig, axis = plt.subplots(row, col)
-        count = 0
-
-        for i in range(row):
-            for j in range(col):
-                axis[i, j].imshow(generated[count, :, :, 0], cmap="gray")
-                axis[i, j].axis('off')
-                count += 1
-
+        for r in range(row):
+            latent = np.random.normal(0, 1, (col, self.config.data.latent_dim))
+            i = np.ones(col, dtype=np.int8)
+            i *= r
+            labels_to_create = self.digit_to_onehot(i, batch_size=col)
+            conditional_latent = np.concatenate((latent, labels_to_create), axis=-1)
+            generated = self.generator.predict(conditional_latent)
+            generated = (generated + 1.) * 127.5
+            for c in range(col):
+                axis[r, c].imshow(np.squeeze(generated[c, ...]), cmap="gray")
+                axis[r, c].axis('off')
         fig.savefig(path + "/images%d.png" % epoch)
         plt.close()
 

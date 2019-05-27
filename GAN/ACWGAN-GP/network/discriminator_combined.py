@@ -32,7 +32,7 @@ class DiscriminatorCombined(BaseModel):
         real_vals = discriminator(input_reals)[0]
 
         fake_aux = discriminator(input_fakes)[1]
-        real_aux = discriminator(input_fakes)[1]
+        real_aux = discriminator(input_reals)[1]
 
         dummy_vals = real_vals
         return Model(inputs=[input_fakes, input_reals], outputs=[fake_vals, fake_aux, real_vals, real_aux, dummy_vals],
@@ -59,11 +59,14 @@ class DiscriminatorCombined(BaseModel):
             clipnorm=self.config.model.discriminator.clipnorm)
 
         parallel_model.compile(optimizer=optim,
-                               loss=[wgan_loss, wgan_loss, 'categorical_crossentropy', 'categorical_crossentropy',
+                               loss=[wgan_loss,
+                                     'categorical_crossentropy',
+                                     wgan_loss,
+                                     'categorical_crossentropy',
                                      gp_loss],
-                               loss_weights=[self.config.model.generator.adv_weight,
-                                             self.config.model.generator.adv_weight,
-                                             self.config.model.generator.aux_weight,
-                                             self.config.model.generator.aux_weight,
+                               loss_weights=[self.config.model.discriminator.adv_weight,
+                                             self.config.model.discriminator.aux_weight,
+                                             self.config.model.discriminator.adv_weight,
+                                             self.config.model.discriminator.aux_weight,
                                              self.config.model.discriminator.gradient_penalty])
         return model, parallel_model

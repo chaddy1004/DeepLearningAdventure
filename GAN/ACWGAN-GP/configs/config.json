@@ -1,6 +1,6 @@
 {
   "exp": {
-    "name": "second_WGAN_GP_CHADDY_100_EPOCHS",
+    "name": "AUX_10_ACWGAN_GP_CHADDY_100_EPOCHS",
     "experiment_dir": "/data/tcgan_font_experiments/"
   },
   "data": {
@@ -17,7 +17,7 @@
       "clipvalue": 0,
       "clipnorm": 0,
       "adv_weight": 1,
-      "aux_weight": 0.1
+      "aux_weight": 10
     },
     "discriminator": {
       "lr": 0.0001,
@@ -26,14 +26,14 @@
       "clipvalue": 0,
       "clipnorm": 0,
       "adv_weight": 1,
-      "aux_weight": 1,
+      "aux_weight": 10,
       "gradient_penalty": 10
     }
   },
   "trainer": {
     "num_epochs": 100,
     "batch_size": 64,
-    "n_train_data": 60000,
+    "n_train_data": 20000,
     "n_critic": 5,
     "predict_all_freq": 50,
     "n_gpus": 2,

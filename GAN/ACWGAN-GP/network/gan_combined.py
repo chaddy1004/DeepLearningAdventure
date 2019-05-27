@@ -8,7 +8,7 @@ from utils.losses import wgan_loss
 
 class GanCombined(BaseModel):
     def define_model(self, generator, discriminator, model_name):
-        z = Input(shape=(self.config.data.latent_dim,))
+        z = Input(shape=(self.config.data.latent_dim + self.config.data.label_len + 1,))
         img_gen = generator(z)
         val = discriminator(img_gen)[0]
         aux = discriminator(img_gen)[1]
